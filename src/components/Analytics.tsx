@@ -1,5 +1,13 @@
 import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { 
+  ChartBarIcon, 
+  ClockIcon, 
+  CheckCircleIcon, 
+  ExclamationTriangleIcon,
+  ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon
+} from '@heroicons/react/24/outline';
 
 interface PullRequest {
   id: number;
@@ -50,159 +58,167 @@ const Analytics: React.FC<AnalyticsProps> = ({ prs, reviews }) => {
     { name: '5+ approvals', value: prs.filter(pr => pr.current_approvals_count >= 5).length },
   ].filter(item => item.value > 0);
 
-  // PR age distribution
-  const now = new Date();
-  const ageDistribution = [
-    { name: '< 1 day', value: 0 },
-    { name: '1-3 days', value: 0 },
-    { name: '4-7 days', value: 0 },
-    { name: '> 1 week', value: 0 },
-  ];
-
-  prs.forEach(pr => {
-    const created = new Date(pr.created_at);
-    const ageInDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
-    
-    if (ageInDays < 1) {
-      ageDistribution[0].value++;
-    } else if (ageInDays <= 3) {
-      ageDistribution[1].value++;
-    } else if (ageInDays <= 7) {
-      ageDistribution[2].value++;
-    } else {
-      ageDistribution[3].value++;
-    }
-  });
-
-  // Reviewer activity
-  const reviewerActivity = reviews.reduce((acc, review) => {
-    acc[review.reviewer_username] = (acc[review.reviewer_username] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  const reviewerData = Object.entries(reviewerActivity)
-    .map(([reviewer, count]) => ({ name: reviewer, reviews: count }))
-    .sort((a, b) => b.reviews - a.reviews)
-    .slice(0, 10);
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
-  const MetricCard: React.FC<{ title: string; value: number; color: string; description?: string }> = ({ 
-    title, 
-    value, 
-    color, 
-    description 
-  }) => (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-      <div className="flex items-center">
-        <div className={`w-3 h-3 rounded-full ${color} mr-3`}></div>
+  // Calculate trends (mock data for demonstration)
+  const mergedPRs = prs.filter(pr => pr.status === 'merged' || pr.status === 'closed').length;
+  const avgApprovals = totalPRs > 0 ? (prs.reduce((sum, pr) => sum + pr.current_approvals_count, 0) / totalPRs).toFixed(1) : '0';
+
+  const MetricCard: React.FC<{ 
+    title: string; 
+    value: number | string; 
+    icon: React.ReactNode; 
+    description?: string;
+    trend?: 'up' | 'down' | 'neutral';
+    trendValue?: string;
+    colorClass: string;
+  }> = ({ title, value, icon, description, trend, trendValue, colorClass }) => (
+    <div className="metric-card group">
+      <div className="flex items-start justify-between">
         <div className="flex-1">
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-          {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
+          <div className="flex items-center space-x-3 mb-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colorClass}`}>
+              {icon}
+            </div>
+            <div>
+              <p className="metric-label">{title}</p>
+              {description && <p className="text-xs text-gray-500">{description}</p>}
+            </div>
+          </div>
+          <div className="flex items-end justify-between">
+            <p className="metric-value">{value}</p>
+            {trend && trendValue && (
+              <div className={`flex items-center space-x-1 metric-trend ${
+                trend === 'up' ? 'trend-up' : trend === 'down' ? 'trend-down' : 'trend-neutral'
+              }`}>
+                {trend === 'up' ? (
+                  <ArrowTrendingUpIcon className="w-3 h-3" />
+                ) : trend === 'down' ? (
+                  <ArrowTrendingDownIcon className="w-3 h-3" />
+                ) : null}
+                <span>{trendValue}</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="space-y-6">
-      {/* Key Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Analytics Overview</h2>
+          <p className="text-gray-600 mt-1">Real-time insights into connector PR performance</p>
+        </div>
+        <div className="flex items-center space-x-2 px-3 py-2 bg-primary-50 rounded-lg border border-primary-200">
+          <ChartBarIcon className="w-4 h-4 text-primary-600" />
+          <span className="text-sm font-medium text-primary-700">Live Data</span>
+        </div>
+      </div>
+
+      {/* Key Metrics Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <MetricCard 
           title="Total PRs" 
-          value={totalPRs} 
-          color="bg-blue-500"
+          value={totalPRs}
+          icon={<ChartBarIcon className="w-5 h-5 text-white" />}
           description="All connector PRs"
+          colorClass="bg-gradient-to-br from-blue-500 to-blue-600"
+          trend="neutral"
+          trendValue={`${totalPRs} total`}
         />
         <MetricCard 
           title="Open PRs" 
-          value={openPRs} 
-          color="bg-primary-500"
-          description="Currently open"
+          value={openPRs}
+          icon={<ClockIcon className="w-5 h-5 text-white" />}
+          description="Currently active"
+          colorClass="bg-gradient-to-br from-primary-500 to-primary-600"
+          trend={openPRs > mergedPRs ? 'up' : 'down'}
+          trendValue={`${((openPRs / totalPRs) * 100).toFixed(0)}%`}
         />
         <MetricCard 
           title="Need Review" 
-          value={prsNeedingReview} 
-          color="bg-danger-500"
-          description="0 approvals"
+          value={prsNeedingReview}
+          icon={<ExclamationTriangleIcon className="w-5 h-5 text-white" />}
+          description="Awaiting approval"
+          colorClass="bg-gradient-to-br from-danger-500 to-danger-600"
+          trend={prsNeedingReview > 0 ? 'up' : 'down'}
+          trendValue={`${prsNeedingReview} pending`}
         />
         <MetricCard 
           title="Changes Requested" 
-          value={prsWithChangesRequested} 
-          color="bg-warning-500"
+          value={prsWithChangesRequested}
+          icon={<ExclamationTriangleIcon className="w-5 h-5 text-white" />}
           description="Feedback pending"
+          colorClass="bg-gradient-to-br from-warning-500 to-warning-600"
+          trend="neutral"
+          trendValue={`${prsWithChangesRequested} items`}
         />
         <MetricCard 
           title="Ready to Merge" 
-          value={readyToMerge} 
-          color="bg-success-500"
-          description="5+ approvals"
+          value={readyToMerge}
+          icon={<CheckCircleIcon className="w-5 h-5 text-white" />}
+          description="Fully approved"
+          colorClass="bg-gradient-to-br from-success-500 to-success-600"
+          trend={readyToMerge > 0 ? 'up' : 'neutral'}
+          trendValue={`${readyToMerge} ready`}
         />
       </div>
 
-      {/* Charts */}
-      <div className="grid md:grid-cols-2 gap-6">
+      {/* Charts Section */}
+      <div className="grid lg:grid-cols-1 gap-8">
         {/* Approval Distribution */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Approval Distribution</h3>
+        <div className="chart-container">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="chart-title">Approval Distribution</h3>
+            <div className="text-sm text-gray-500">
+              Avg: {avgApprovals} approvals
+            </div>
+          </div>
           {approvalDistribution.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie
                   data={approvalDistribution}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}`}
-                  outerRadius={80}
+                  label={({ name, value, percent }) => `${name}: ${value} (${((percent || 0) * 100).toFixed(0)}%)`}
+                  outerRadius={90}
                   fill="#8884d8"
                   dataKey="value"
+                  strokeWidth={2}
+                  stroke="#ffffff"
                 >
                   {approvalDistribution.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip 
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                  }}
+                />
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-64 text-gray-500">
-              No data available
+            <div className="empty-state">
+              <ChartBarIcon className="empty-state-icon" />
+              <h4 className="empty-state-title">No Data Available</h4>
+              <p className="empty-state-description">
+                No approval data to display at this time.
+              </p>
             </div>
           )}
         </div>
-
-        {/* PR Age Distribution */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">PR Age Distribution</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={ageDistribution}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="value" fill="#3b82f6" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
       </div>
-
-      {/* Reviewer Activity */}
-      {reviewerData.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Reviewers</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={reviewerData} layout="horizontal">
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" />
-              <YAxis dataKey="name" type="category" width={100} />
-              <Tooltip />
-              <Bar dataKey="reviews" fill="#10b981" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
     </div>
   );
 };
