@@ -21,6 +21,8 @@ interface PullRequest {
   current_approvals_count: number;
   labels: string[];
   reviewers: string[];
+  requested_reviewers: string[];
+  pending_reviewers: string[];
   url: string;
 }
 
@@ -161,14 +163,25 @@ const Dashboard: React.FC = () => {
   }, [prs, allReviews, filters]);
 
   const getStatusColor = (pr: PullRequest) => {
-    if (pr.current_approvals_count >= 5) return 'success';
+    // Calculate dynamic total required approvals
+    const totalRequired = pr.current_approvals_count + pr.pending_reviewers.length;
+    
+    // Ready to merge: no pending reviewers and has approvals
+    if (pr.pending_reviewers.length === 0 && pr.current_approvals_count > 0) return 'success';
+    
+    // No reviewers assigned
+    if (pr.current_approvals_count === 0 && totalRequired === 0) return 'primary';
+    
+    // Needs initial review
     if (pr.current_approvals_count === 0) return 'danger';
     
+    // Check for changes requested
     const prReviews = allReviews.filter(r => r.pr_id === pr.github_pr_number);
     if (prReviews.some(r => r.review_state === 'changes_requested')) {
       return 'warning';
     }
     
+    // In progress (has some approvals but still waiting for more)
     return 'primary';
   };
 

@@ -14,6 +14,8 @@ interface PullRequest {
   current_approvals_count: number;
   labels: string[];
   reviewers: string[];
+  requested_reviewers: string[];
+  pending_reviewers: string[];
   url: string;
 }
 
@@ -73,13 +75,35 @@ const PRCard: React.FC<PRCardProps> = ({ pr, reviews, statusColor, onClick }) =>
   };
 
   const getStatusText = () => {
-    if (pr.current_approvals_count >= 5) return 'Ready to merge';
+    // Both merged and closed mean the PR was merged in this project
+    if (pr.status === 'merged' || pr.status === 'closed') return 'Merged';
+    
+    // Calculate dynamic total required approvals
+    const totalRequired = pr.current_approvals_count + pr.pending_reviewers.length;
+    
+    // For open PRs, show approval status
+    if (pr.pending_reviewers.length === 0 && pr.current_approvals_count > 0) return 'Ready to merge';
+    if (pr.current_approvals_count === 0 && totalRequired === 0) return 'No reviewers assigned';
     if (pr.current_approvals_count === 0) return 'Needs review';
     
     const changesRequested = reviews.some(r => r.review_state === 'changes_requested');
     if (changesRequested) return 'Changes requested';
     
-    return `${pr.current_approvals_count}/5 approvals`;
+    return `${pr.current_approvals_count}/${totalRequired} approvals`;
+  };
+
+  const getPRStatusColor = () => {
+    // Both merged and closed mean the PR was merged (green)
+    if (pr.status === 'merged' || pr.status === 'closed') {
+      return 'bg-green-50 text-green-600 border-green-200';
+    }
+    return getStatusBadgeColor(); // Use existing logic for open PRs
+  };
+
+  const getPRStatusIcon = () => {
+    // Both merged and closed mean the PR was merged (checkmark)
+    if (pr.status === 'merged' || pr.status === 'closed') return <CheckCircleIcon className="w-4 h-4" />;
+    return getStatusIcon(); // Use existing logic for open PRs
   };
 
   const approvedReviewers = reviews.filter(r => r.review_state === 'approved');
@@ -103,29 +127,42 @@ const PRCard: React.FC<PRCardProps> = ({ pr, reviews, statusColor, onClick }) =>
       </div>
 
       {/* Status Badge */}
-      <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getStatusBadgeColor()} mb-4`}>
-        {getStatusIcon()}
+      <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getPRStatusColor()} mb-4`}>
+        {getPRStatusIcon()}
         <span className="ml-1">{getStatusText()}</span>
       </div>
 
       {/* Approval Progress */}
       <div className="mb-4">
-        <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-          <span>Approvals</span>
-          <span>{pr.current_approvals_count}/5</span>
-        </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <div 
-            className={`h-2 rounded-full transition-all duration-300 ${
-              pr.current_approvals_count >= 5 ? 'bg-success-500' : 'bg-primary-500'
-            }`}
-            style={{ width: `${Math.min((pr.current_approvals_count / 5) * 100, 100)}%` }}
-          ></div>
-        </div>
+        {(() => {
+          const totalRequired = pr.current_approvals_count + pr.pending_reviewers.length;
+          const progressPercentage = totalRequired > 0 ? (pr.current_approvals_count / totalRequired) * 100 : 0;
+          
+          return (
+            <>
+              <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+                <span>Approvals</span>
+                <span>{pr.current_approvals_count}/{totalRequired}</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className={`h-2 rounded-full transition-all duration-300 ${
+                    pr.pending_reviewers.length === 0 && pr.current_approvals_count > 0
+                      ? 'bg-success-500' 
+                      : 'bg-primary-500'
+                  }`}
+                  style={{ 
+                    width: `${Math.min(progressPercentage, 100)}%`
+                  }}
+                ></div>
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       {/* Reviewers */}
-      {(approvedReviewers.length > 0 || changesRequestedReviewers.length > 0) && (
+      {(approvedReviewers.length > 0 || changesRequestedReviewers.length > 0 || pr.pending_reviewers.length > 0) && (
         <div className="mb-4">
           {approvedReviewers.length > 0 && (
             <div className="flex items-center text-sm text-success-600 mb-1">
@@ -134,9 +171,15 @@ const PRCard: React.FC<PRCardProps> = ({ pr, reviews, statusColor, onClick }) =>
             </div>
           )}
           {changesRequestedReviewers.length > 0 && (
-            <div className="flex items-center text-sm text-warning-600">
+            <div className="flex items-center text-sm text-warning-600 mb-1">
               <ExclamationTriangleIcon className="w-4 h-4 mr-1" />
               <span>Changes requested by: {changesRequestedReviewers.map(r => r.reviewer_username).join(', ')}</span>
+            </div>
+          )}
+          {pr.pending_reviewers.length > 0 && (
+            <div className="flex items-center text-sm text-gray-600">
+              <ClockIcon className="w-4 h-4 mr-1" />
+              <span>Waiting for: {pr.pending_reviewers.join(', ')}</span>
             </div>
           )}
         </div>
@@ -170,8 +213,17 @@ const PRCard: React.FC<PRCardProps> = ({ pr, reviews, statusColor, onClick }) =>
           <span>Created {formatDate(pr.created_at)}</span>
         </div>
         <div className="flex items-center">
-          <UserIcon className="w-4 h-4 mr-1" />
-          <span>Updated {formatDate(pr.updated_at)}</span>
+          {(pr.status === 'merged' || pr.status === 'closed') && pr.merged_at ? (
+            <>
+              <CheckCircleIcon className="w-4 h-4 mr-1" />
+              <span>Merged {formatDate(pr.merged_at)}</span>
+            </>
+          ) : (
+            <>
+              <UserIcon className="w-4 h-4 mr-1" />
+              <span>Updated {formatDate(pr.updated_at)}</span>
+            </>
+          )}
         </div>
       </div>
     </div>
