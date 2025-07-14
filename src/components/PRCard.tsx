@@ -6,7 +6,13 @@ import {
   ExclamationTriangleIcon,
   ArrowTopRightOnSquareIcon,
   TagIcon,
-  UsersIcon
+  UsersIcon,
+  CodeBracketIcon,
+  SignalIcon,
+  PencilIcon,
+  QuestionMarkCircleIcon,
+  CheckBadgeIcon,
+  ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/outline';
 
 interface PullRequest {
@@ -36,14 +42,39 @@ interface Review {
   is_latest_review: boolean;
 }
 
+interface PRCommentCategorization {
+  pr_number: number;
+  pr_title: string;
+  pr_author: string;
+  categories: {
+    reusability: any[];
+    rust_best_practices: any[];
+    status_mapping: any[];
+    typos: any[];
+    unclassified: any[];
+  };
+  summary: {
+    total_comments: number;
+    reusability_count: number;
+    rust_best_practices_count: number;
+    status_mapping_count: number;
+    typos_count: number;
+    unclassified_count: number;
+    avg_confidence: number;
+  };
+}
+
 interface PRCardProps {
   pr: PullRequest;
   reviews: Review[];
   statusColor: 'success' | 'warning' | 'danger' | 'primary';
+  categorization?: PRCommentCategorization;
+  categorizationLoading?: boolean;
   onClick?: () => void;
+  onCategoryClick?: (category: string) => void;
 }
 
-const PRCard: React.FC<PRCardProps> = ({ pr, reviews, statusColor, onClick }) => {
+const PRCard: React.FC<PRCardProps> = ({ pr, reviews, statusColor, categorization, categorizationLoading, onClick, onCategoryClick }) => {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -54,6 +85,57 @@ const PRCard: React.FC<PRCardProps> = ({ pr, reviews, statusColor, onClick }) =>
     } else {
       const diffInDays = Math.floor(diffInHours / 24);
       return `${diffInDays}d ago`;
+    }
+  };
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'reusability':
+        return <CodeBracketIcon className="w-3 h-3" />;
+      case 'rust_best_practices':
+        return <CheckBadgeIcon className="w-3 h-3" />;
+      case 'status_mapping':
+        return <SignalIcon className="w-3 h-3" />;
+      case 'typos':
+        return <PencilIcon className="w-3 h-3" />;
+      case 'unclassified':
+        return <QuestionMarkCircleIcon className="w-3 h-3" />;
+      default:
+        return <ChatBubbleLeftRightIcon className="w-3 h-3" />;
+    }
+  };
+
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case 'reusability':
+        return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'rust_best_practices':
+        return 'bg-orange-50 text-orange-700 border-orange-200';
+      case 'status_mapping':
+        return 'bg-green-50 text-green-700 border-green-200';
+      case 'typos':
+        return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'unclassified':
+        return 'bg-gray-50 text-gray-700 border-gray-200';
+      default:
+        return 'bg-gray-50 text-gray-700 border-gray-200';
+    }
+  };
+
+  const formatCategoryName = (category: string) => {
+    switch (category) {
+      case 'reusability':
+        return 'Reusability';
+      case 'rust_best_practices':
+        return 'Rust Practices';
+      case 'status_mapping':
+        return 'Status Mapping';
+      case 'typos':
+        return 'Typos';
+      case 'unclassified':
+        return 'Unclassified';
+      default:
+        return category;
     }
   };
 
@@ -284,6 +366,105 @@ const PRCard: React.FC<PRCardProps> = ({ pr, reviews, statusColor, onClick }) =>
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Comment Categories Section */}
+      {(categorization || categorizationLoading) && (
+        <div className="px-6 pb-4">
+          <div className="flex items-center space-x-2 mb-3">
+            <ChatBubbleLeftRightIcon className="w-4 h-4 text-gray-400" />
+            <span className="text-sm font-medium text-gray-700">Comment Categories</span>
+            {categorizationLoading && (
+              <div className="w-3 h-3 border border-gray-300 border-t-primary-600 rounded-full animate-spin"></div>
+            )}
+          </div>
+          
+          {categorizationLoading ? (
+            <div className="flex items-center justify-center py-3">
+              <div className="text-xs text-gray-500">Analyzing comments...</div>
+            </div>
+          ) : categorization ? (
+            <div className="space-y-2">
+              {/* Show category badges */}
+              <div className="flex flex-wrap gap-2">
+                {categorization.summary.reusability_count > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCategoryClick?.('reusability');
+                    }}
+                    className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border transition-colors hover:shadow-sm ${getCategoryColor('reusability')}`}
+                  >
+                    {getCategoryIcon('reusability')}
+                    <span className="ml-1">{formatCategoryName('reusability')}: {categorization.summary.reusability_count}</span>
+                  </button>
+                )}
+                
+                {categorization.summary.rust_best_practices_count > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCategoryClick?.('rust_best_practices');
+                    }}
+                    className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border transition-colors hover:shadow-sm ${getCategoryColor('rust_best_practices')}`}
+                  >
+                    {getCategoryIcon('rust_best_practices')}
+                    <span className="ml-1">{formatCategoryName('rust_best_practices')}: {categorization.summary.rust_best_practices_count}</span>
+                  </button>
+                )}
+                
+                {categorization.summary.status_mapping_count > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCategoryClick?.('status_mapping');
+                    }}
+                    className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border transition-colors hover:shadow-sm ${getCategoryColor('status_mapping')}`}
+                  >
+                    {getCategoryIcon('status_mapping')}
+                    <span className="ml-1">{formatCategoryName('status_mapping')}: {categorization.summary.status_mapping_count}</span>
+                  </button>
+                )}
+                
+                {categorization.summary.typos_count > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCategoryClick?.('typos');
+                    }}
+                    className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border transition-colors hover:shadow-sm ${getCategoryColor('typos')}`}
+                  >
+                    {getCategoryIcon('typos')}
+                    <span className="ml-1">{formatCategoryName('typos')}: {categorization.summary.typos_count}</span>
+                  </button>
+                )}
+                
+                {categorization.summary.unclassified_count > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCategoryClick?.('unclassified');
+                    }}
+                    className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border transition-colors hover:shadow-sm ${getCategoryColor('unclassified')}`}
+                  >
+                    {getCategoryIcon('unclassified')}
+                    <span className="ml-1">{formatCategoryName('unclassified')}: {categorization.summary.unclassified_count}</span>
+                  </button>
+                )}
+              </div>
+              
+              {/* Summary info */}
+              {categorization.summary.total_comments > 0 && (
+                <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
+                  <span>{categorization.summary.total_comments} comments analyzed</span>
+                  <span>{Math.round(categorization.summary.avg_confidence * 100)}% confidence</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-500">No comments to categorize</div>
+          )}
         </div>
       )}
 

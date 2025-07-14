@@ -8,6 +8,8 @@ import {
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon
 } from '@heroicons/react/24/outline';
+import PRTimelineHistogram from './PRTimelineHistogram';
+import PRCommentCategorizationTable from './PRCommentCategorizationTable';
 
 interface PullRequest {
   id: number;
@@ -171,6 +173,12 @@ const Analytics: React.FC<AnalyticsProps> = ({ prs, reviews }) => {
 
       {/* Charts Section */}
       <div className="grid lg:grid-cols-1 gap-8">
+        {/* PR Timeline Histogram */}
+        <PRTimelineHistogram />
+
+        {/* Comment Categorization Table */}
+        <PRCommentCategorizationTable />
+
         {/* Approval Distribution */}
         <div className="chart-container">
           <div className="flex items-center justify-between mb-6">

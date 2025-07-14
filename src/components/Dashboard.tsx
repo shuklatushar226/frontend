@@ -12,7 +12,12 @@ import {
   ClockIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
-  UserGroupIcon
+  UserGroupIcon,
+  ChatBubbleLeftRightIcon,
+  CodeBracketIcon,
+  CheckBadgeIcon,
+  PencilIcon,
+  QuestionMarkCircleIcon
 } from '@heroicons/react/24/outline';
 import Analytics from './Analytics';
 
@@ -45,6 +50,49 @@ interface Review {
   is_latest_review: boolean;
 }
 
+interface PRCommentCategorization {
+  pr_number: number;
+  pr_title: string;
+  pr_author: string;
+  categories: {
+    reusability: any[];
+    rust_best_practices: any[];
+    status_mapping: any[];
+    typos: any[];
+    unclassified: any[];
+  };
+  summary: {
+    total_comments: number;
+    reusability_count: number;
+    rust_best_practices_count: number;
+    status_mapping_count: number;
+    typos_count: number;
+    unclassified_count: number;
+    avg_confidence: number;
+  };
+}
+
+interface CommentCategorizationResponse {
+  pr_categorizations: PRCommentCategorization[];
+  overall_summary: {
+    total_prs_analyzed: number;
+    total_comments_categorized: number;
+    category_distribution: {
+      reusability: number;
+      rust_best_practices: number;
+      status_mapping: number;
+      typos: number;
+      unclassified: number;
+    };
+    avg_confidence_score: number;
+  };
+  metadata: {
+    generated_at: string;
+    model_used: string;
+    analysis_scope: string;
+  };
+}
+
 const Dashboard: React.FC = () => {
   const [ws, setWs] = useState<WebSocket | null>(null);
   const navigate = useNavigate();
@@ -73,6 +121,66 @@ const Dashboard: React.FC = () => {
     },
     enabled: prs.length > 0,
   });
+
+  // Helper function to get cached categorization data from localStorage
+  const getCachedCategorizationData = (): CommentCategorizationResponse | undefined => {
+    try {
+      const cached = localStorage.getItem('comment-categorization-cache');
+      if (cached) {
+        const parsedCache = JSON.parse(cached);
+        // Check if cache is still valid (24 hours)
+        const cacheAge = Date.now() - new Date(parsedCache.timestamp).getTime();
+        if (cacheAge < 24 * 60 * 60 * 1000) {
+          return parsedCache.data as CommentCategorizationResponse;
+        }
+      }
+    } catch (error) {
+      console.error('Error reading cached categorization data:', error);
+    }
+    return undefined;
+  };
+
+  // Helper function to save categorization data to localStorage
+  const saveCachedCategorizationData = (data: CommentCategorizationResponse) => {
+    try {
+      const cacheEntry = {
+        data,
+        timestamp: new Date().toISOString()
+      };
+      localStorage.setItem('comment-categorization-cache', JSON.stringify(cacheEntry));
+    } catch (error) {
+      console.error('Error saving cached categorization data:', error);
+    }
+  };
+
+  // Fetch comment categorization data automatically with caching
+  const { data: categorizationData, isLoading: categorizationLoading } = useQuery({
+    queryKey: ['comment-categorization'],
+    queryFn: async (): Promise<CommentCategorizationResponse> => {
+      const response = await axios.get(`${API_BASE_URL}/api/analytics/comment-categorization`);
+      
+      // Save fresh data to localStorage
+      saveCachedCategorizationData(response.data);
+      
+      return response.data;
+    },
+    enabled: prs.length > 0,
+    retry: 1,
+    refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
+    staleTime: 3 * 60 * 1000, // Consider data stale after 3 minutes
+    initialData: getCachedCategorizationData, // Use cached data immediately if available
+  });
+
+  // Create a map for quick PR categorization lookup
+  const categorizationMap = React.useMemo(() => {
+    const map = new Map<number, PRCommentCategorization>();
+    if (categorizationData?.pr_categorizations) {
+      categorizationData.pr_categorizations.forEach(categorization => {
+        map.set(categorization.pr_number, categorization);
+      });
+    }
+    return map;
+  }, [categorizationData]);
 
   // WebSocket connection for real-time updates
   useEffect(() => {
@@ -373,43 +481,149 @@ const Dashboard: React.FC = () => {
             <div className="card-header">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
-                <button
-                  onClick={() => navigate('/pull-requests')}
-                  className="text-sm text-primary-600 hover:text-primary-700 font-medium"
-                >
-                  View all PRs →
-                </button>
+                <div className="flex items-center space-x-3">
+                  {categorizationLoading && (
+                    <div className="flex items-center space-x-2 text-xs text-gray-500">
+                      <div className="w-3 h-3 border border-gray-300 border-t-primary-600 rounded-full animate-spin"></div>
+                      <span>Analyzing comments...</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => navigate('/pull-requests')}
+                    className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                  >
+                    View all PRs →
+                  </button>
+                </div>
               </div>
             </div>
             <div className="card-body">
               <div className="space-y-4">
-                {recentPRs.map(pr => (
-                  <div 
-                    key={pr.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                    onClick={() => navigate(`/pr/${pr.github_pr_number}`)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="text-xs font-semibold text-gray-500 bg-gray-200 px-2 py-1 rounded">
-                          #{pr.github_pr_number}
-                        </span>
-                        <span className={`status-badge ${
-                          pr.pending_reviewers.length === 0 && pr.current_approvals_count > 0 ? 'status-success' :
-                          pr.current_approvals_count === 0 ? 'status-warning' : 'status-primary'
-                        }`}>
-                          {pr.pending_reviewers.length === 0 && pr.current_approvals_count > 0 ? 'Ready to merge' :
-                           pr.current_approvals_count === 0 ? 'Needs review' : 'In progress'}
-                        </span>
+                {recentPRs.map(pr => {
+                  const prReviews = allReviews.filter(r => r.pr_id === pr.github_pr_number);
+                  const categorization = categorizationMap.get(pr.github_pr_number);
+                  
+                  const statusColor = 
+                    pr.pending_reviewers.length === 0 && pr.current_approvals_count > 0 ? 'success' :
+                    pr.current_approvals_count === 0 ? 'warning' : 'primary';
+
+                  return (
+                    <div 
+                      key={pr.id}
+                      className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="text-xs font-semibold text-gray-500 bg-gray-200 px-2 py-1 rounded">
+                              #{pr.github_pr_number}
+                            </span>
+                            <span className={`status-badge ${
+                              statusColor === 'success' ? 'status-success' :
+                              statusColor === 'warning' ? 'status-warning' : 'status-primary'
+                            }`}>
+                              {pr.pending_reviewers.length === 0 && pr.current_approvals_count > 0 ? 'Ready to merge' :
+                               pr.current_approvals_count === 0 ? 'Needs review' : 'In progress'}
+                            </span>
+                          </div>
+                          <h4 
+                            className="font-medium text-gray-900 truncate cursor-pointer hover:text-primary-600 transition-colors"
+                            onClick={() => navigate(`/pr/${pr.github_pr_number}`)}
+                          >
+                            {pr.title}
+                          </h4>
+                          <p className="text-sm text-gray-500">
+                            by {pr.author} • Updated {new Date(pr.updated_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <ArrowRightIcon 
+                          className="w-4 h-4 text-gray-400 cursor-pointer hover:text-primary-600 transition-colors"
+                          onClick={() => navigate(`/pr/${pr.github_pr_number}`)}
+                        />
                       </div>
-                      <h4 className="font-medium text-gray-900 truncate">{pr.title}</h4>
-                      <p className="text-sm text-gray-500">
-                        by {pr.author} • Updated {new Date(pr.updated_at).toLocaleDateString()}
-                      </p>
+
+                      {/* Comment Categories */}
+                      {(categorization || categorizationLoading) && (
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <ChatBubbleLeftRightIcon className="w-4 h-4 text-gray-400" />
+                            <span className="text-sm font-medium text-gray-700">Comment Categories</span>
+                            {categorizationLoading && (
+                              <div className="w-3 h-3 border border-gray-300 border-t-primary-600 rounded-full animate-spin"></div>
+                            )}
+                          </div>
+                          
+                          {categorizationLoading ? (
+                            <div className="text-xs text-gray-500">Analyzing comments...</div>
+                          ) : categorization ? (
+                            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
+                              <div className="flex flex-wrap gap-1">
+                                {categorization.summary.reusability_count > 0 && (
+                                  <button
+                                    onClick={() => navigate('/analytics')}
+                                    className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border bg-blue-50 text-blue-700 border-blue-200 hover:shadow-sm transition-colors"
+                                  >
+                                    <CodeBracketIcon className="w-3 h-3 mr-1" />
+                                    Reusability: {categorization.summary.reusability_count}
+                                  </button>
+                                )}
+                                
+                                {categorization.summary.rust_best_practices_count > 0 && (
+                                  <button
+                                    onClick={() => navigate('/analytics')}
+                                    className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border bg-orange-50 text-orange-700 border-orange-200 hover:shadow-sm transition-colors"
+                                  >
+                                    <CheckBadgeIcon className="w-3 h-3 mr-1" />
+                                    Rust Practices: {categorization.summary.rust_best_practices_count}
+                                  </button>
+                                )}
+                                
+                                {categorization.summary.status_mapping_count > 0 && (
+                                  <button
+                                    onClick={() => navigate('/analytics')}
+                                    className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border bg-green-50 text-green-700 border-green-200 hover:shadow-sm transition-colors"
+                                  >
+                                    <SignalIcon className="w-3 h-3 mr-1" />
+                                    Status Mapping: {categorization.summary.status_mapping_count}
+                                  </button>
+                                )}
+                                
+                                {categorization.summary.typos_count > 0 && (
+                                  <button
+                                    onClick={() => navigate('/analytics')}
+                                    className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200 hover:shadow-sm transition-colors"
+                                  >
+                                    <PencilIcon className="w-3 h-3 mr-1" />
+                                    Typos: {categorization.summary.typos_count}
+                                  </button>
+                                )}
+                                
+                                {categorization.summary.unclassified_count > 0 && (
+                                  <button
+                                    onClick={() => navigate('/analytics')}
+                                    className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border bg-gray-50 text-gray-700 border-gray-200 hover:shadow-sm transition-colors"
+                                  >
+                                    <QuestionMarkCircleIcon className="w-3 h-3 mr-1" />
+                                    Unclassified: {categorization.summary.unclassified_count}
+                                  </button>
+                                )}
+                              </div>
+                              
+                              {categorization.summary.total_comments > 0 && (
+                                <div className="flex items-center gap-4 text-xs text-gray-500 lg:flex-shrink-0">
+                                  <span>{categorization.summary.total_comments} comments analyzed</span>
+                                  <span>{Math.round(categorization.summary.avg_confidence * 100)}% confidence</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-gray-500">No comments to categorize</div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <ArrowRightIcon className="w-4 h-4 text-gray-400" />
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
