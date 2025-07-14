@@ -10,7 +10,8 @@ import {
   Tooltip, 
   ResponsiveContainer, 
   Legend,
-  Cell
+  Cell,
+  LabelList
 } from 'recharts';
 import { 
   ClockIcon, 
@@ -42,7 +43,14 @@ interface PRTimeline {
     first_review_to_comments_fixed: number;
     comments_fixed_to_approved: number;
     approved_to_merged: number;
+    ongoing_time: number;
     total_review_time: number;
+  };
+  milestones: {
+    pr_created: { timestamp: string; achieved: boolean; };
+    first_review: { timestamp: string | null; achieved: boolean; };
+    approved: { timestamp: string | null; achieved: boolean; };
+    merged: { timestamp: string | null; achieved: boolean; };
   };
 }
 
@@ -56,6 +64,15 @@ interface TimelineAnalytics {
     avg_approval_time_days: number;
     longest_pr: PRTimeline | null;
     fastest_pr: PRTimeline | null;
+    data_quality?: {
+      high_quality: number;
+      medium_quality: number;
+      low_quality: number;
+      invalid_timelines: number;
+      avg_confidence_score: number;
+      total_issues_detected: number;
+      review_cycles_total: number;
+    };
   };
   generated_at: string;
 }
@@ -66,28 +83,34 @@ interface ChartDataPoint {
   prAuthor: string;
   totalDuration: number;
   prRaised: number;
-  firstReview: number;
+  reviewDiscussion: number;
   commentsFixed: number;
-  approved: number;
-  merged: number;
+  waitingToMerge: number;
+  ongoingTime: number;
   isCompleted: boolean;
+  milestones: {
+    pr_created: { timestamp: string; achieved: boolean; };
+    first_review: { timestamp: string | null; achieved: boolean; };
+    approved: { timestamp: string | null; achieved: boolean; };
+    merged: { timestamp: string | null; achieved: boolean; };
+  };
 }
 
 // Stage colors for the chart
 const STAGE_COLORS = {
   prRaised: '#3b82f6',        // Blue
-  firstReview: '#f59e0b',     // Yellow/Orange
+  reviewDiscussion: '#f59e0b', // Yellow/Orange  
   commentsFixed: '#ef4444',   // Red
-  approved: '#10b981',        // Green
-  merged: '#8b5cf6'          // Purple
+  waitingToMerge: '#10b981',  // Green
+  ongoingTime: '#6b7280'      // Gray
 };
 
 const STAGE_LABELS = {
-  prRaised: 'PR Raised',
-  firstReview: 'First Review',
-  commentsFixed: 'Comments Fixed',
-  approved: 'Approved',
-  merged: 'Merged'
+  prRaised: 'Waiting for Review',
+  reviewDiscussion: 'Under Review',
+  commentsFixed: 'Comments Fixed', 
+  waitingToMerge: 'Approved & Waiting to Merge',
+  ongoingTime: 'Open Time (Still Waiting)'
 };
 
 const PRTimelineHistogram: React.FC = () => {
@@ -118,7 +141,7 @@ const PRTimelineHistogram: React.FC = () => {
       filteredData = filteredData.filter(t => !t.is_completed);
     }
 
-    // Transform to chart format
+    // Transform to chart format with new comprehensive timeline segments
     const transformed = filteredData.map(timeline => ({
       prNumber: timeline.pr_number,
       prTitle: timeline.pr_title.length > 30 ? 
@@ -127,19 +150,20 @@ const PRTimelineHistogram: React.FC = () => {
       prAuthor: timeline.pr_author,
       totalDuration: timeline.total_duration,
       prRaised: timeline.stage_durations.pr_raised_to_first_review,
-      firstReview: timeline.stage_durations.first_review_to_comments_fixed,
+      reviewDiscussion: timeline.stage_durations.first_review_to_comments_fixed,
       commentsFixed: timeline.stage_durations.comments_fixed_to_approved,
-      approved: timeline.stage_durations.approved_to_merged,
-      merged: 0, // This will be calculated as remaining time if needed
-      isCompleted: timeline.is_completed
+      waitingToMerge: timeline.stage_durations.approved_to_merged,
+      ongoingTime: timeline.stage_durations.ongoing_time || 0,
+      isCompleted: timeline.is_completed,
+      milestones: timeline.milestones
     }));
 
     // Sort data
     switch (sortBy) {
       case 'review':
-        return transformed.sort((a, b) => b.firstReview - a.firstReview);
+        return transformed.sort((a, b) => b.reviewDiscussion - a.reviewDiscussion);
       case 'approval':
-        return transformed.sort((a, b) => b.approved - a.approved);
+        return transformed.sort((a, b) => b.waitingToMerge - a.waitingToMerge);
       default:
         return transformed.sort((a, b) => b.totalDuration - a.totalDuration);
     }
@@ -182,7 +206,7 @@ const PRTimelineHistogram: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   <div 
                     className="w-3 h-3 rounded-sm" 
-                    style={{ backgroundColor: entry.color }}
+                    style={{ backgroundColor: STAGE_COLORS[entry.dataKey as keyof typeof STAGE_COLORS] }}
                   ></div>
                   <span className="text-xs">{STAGE_LABELS[entry.dataKey as keyof typeof STAGE_LABELS]}:</span>
                 </div>
@@ -369,6 +393,59 @@ const PRTimelineHistogram: React.FC = () => {
         </div>
       )}
 
+      {/* Data Quality Metrics */}
+      {timelineData.summary?.data_quality && (
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+          <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+            <ChartBarIcon className="w-4 h-4 mr-2 text-gray-600" />
+            Data Quality Assessment
+          </h4>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="text-center">
+              <div className="text-xs text-green-600 font-medium mb-1">High Quality</div>
+              <div className="text-lg font-bold text-green-900">
+                {timelineData.summary.data_quality.high_quality}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-yellow-600 font-medium mb-1">Medium Quality</div>
+              <div className="text-lg font-bold text-yellow-900">
+                {timelineData.summary.data_quality.medium_quality}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-red-600 font-medium mb-1">Low Quality</div>
+              <div className="text-lg font-bold text-red-900">
+                {timelineData.summary.data_quality.low_quality}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-gray-600 font-medium mb-1">Avg Confidence</div>
+              <div className="text-lg font-bold text-gray-900">
+                {(timelineData.summary.data_quality.avg_confidence_score * 100).toFixed(0)}%
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-orange-600 font-medium mb-1">Issues Found</div>
+              <div className="text-lg font-bold text-orange-900">
+                {timelineData.summary.data_quality.total_issues_detected}
+              </div>
+            </div>
+          </div>
+          {timelineData.summary.data_quality.avg_confidence_score < 0.7 && (
+            <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-md">
+              <div className="flex items-start space-x-2">
+                <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="text-xs text-amber-800">
+                  <strong>Data Quality Warning:</strong> Some timeline calculations have low confidence scores. 
+                  This may indicate incomplete review data or complex PR workflows that don't follow standard patterns.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Chart */}
       <div className="mb-6">
         <ResponsiveContainer width="100%" height={600}>
@@ -401,42 +478,106 @@ const PRTimelineHistogram: React.FC = () => {
               width={80}
             />
             <Tooltip content={<CustomTooltip />} />
-            <Legend 
-              wrapperStyle={{ paddingTop: '30px', fontSize: '12px' }}
-              formatter={(value) => STAGE_LABELS[value as keyof typeof STAGE_LABELS]}
-              iconType="rect"
-            />
+            {/* Remove automatic legend since Cell components break color detection */}
             
             <Bar 
               dataKey="prRaised" 
               stackId="timeline" 
-              fill={STAGE_COLORS.prRaised}
               stroke="#ffffff"
               strokeWidth={1}
-            />
+            >
+              {chartData.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={STAGE_COLORS.prRaised}
+                  fillOpacity={entry.isCompleted ? 1 : 0.8}
+                />
+              ))}
+            </Bar>
             <Bar 
-              dataKey="firstReview" 
+              dataKey="reviewDiscussion" 
               stackId="timeline" 
-              fill={STAGE_COLORS.firstReview}
               stroke="#ffffff"
               strokeWidth={1}
-            />
+            >
+              {chartData.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={STAGE_COLORS.reviewDiscussion}
+                  fillOpacity={entry.isCompleted ? 1 : 0.8}
+                />
+              ))}
+            </Bar>
             <Bar 
               dataKey="commentsFixed" 
               stackId="timeline" 
-              fill={STAGE_COLORS.commentsFixed}
               stroke="#ffffff"
               strokeWidth={1}
-            />
+            >
+              {chartData.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={STAGE_COLORS.commentsFixed}
+                  fillOpacity={entry.isCompleted ? 1 : 0.8}
+                />
+              ))}
+            </Bar>
             <Bar 
-              dataKey="approved" 
+              dataKey="waitingToMerge" 
               stackId="timeline" 
-              fill={STAGE_COLORS.approved}
               stroke="#ffffff"
               strokeWidth={1}
-            />
+            >
+              {chartData.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={STAGE_COLORS.waitingToMerge}
+                  fillOpacity={entry.isCompleted ? 1 : 0.8}
+                />
+              ))}
+            </Bar>
+            <Bar 
+              dataKey="ongoingTime" 
+              stackId="timeline" 
+              stroke="#ffffff"
+              strokeWidth={1}
+            >
+              {chartData.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={STAGE_COLORS.ongoingTime}
+                  fillOpacity={entry.isCompleted ? 1 : 0.8}
+                />
+              ))}
+              <LabelList 
+                dataKey={(entry: any) => entry.isCompleted ? 'MERGED' : ''}
+                position="top"
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  fill: '#16a34a'
+                }}
+                offset={5}
+              />
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* Custom Legend */}
+      <div className="flex flex-wrap justify-center items-center gap-4 mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="text-sm font-medium text-gray-700 mr-2">Stage Legend:</div>
+        {Object.entries(STAGE_COLORS).map(([key, color]) => (
+          <div key={key} className="flex items-center space-x-2">
+            <div 
+              className="w-4 h-3 rounded-sm border border-gray-300" 
+              style={{ backgroundColor: color }}
+            ></div>
+            <span className="text-xs text-gray-700">
+              {STAGE_LABELS[key as keyof typeof STAGE_LABELS]}
+            </span>
+          </div>
+        ))}
       </div>
 
       {/* Insights */}
@@ -487,9 +628,15 @@ const PRTimelineHistogram: React.FC = () => {
         <InformationCircleIcon className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
         <div className="text-xs text-blue-800">
           <strong>How to read this chart:</strong> Each bar represents a PR's journey through different stages. 
-          Hover over bars to see detailed timing. Use filters to focus on specific PR types or sort by different metrics.
-          Colors represent: <span className="text-blue-600">PR Raised</span>, <span className="text-yellow-600">First Review</span>, 
-          <span className="text-red-600">Comments Fixed</span>, <span className="text-green-600">Approved</span>.
+          <strong>"MERGED" labels appear above completed PRs.</strong> 
+          <strong>Bar opacity indicates PR status:</strong> 
+          <span style={{ fontWeight: 'bold' }}>Vibrant colors = Merged PRs</span>, 
+          <span style={{ fontWeight: 'bold', opacity: 0.8 }}>Faded colors = Open PRs</span>.
+          <br />
+          Stage colors: <span className="text-blue-600">■ Waiting for Review</span>, <span className="text-yellow-600">■ Under Review</span>, 
+          <span className="text-red-600">■ Comments Fixed</span>, <span className="text-green-600">■ Approved & Waiting to Merge</span>, 
+          <span className="text-gray-600">■ Open Time</span>.
+          Hover for detailed timing.
         </div>
       </div>
     </div>
